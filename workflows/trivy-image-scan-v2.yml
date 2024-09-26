@@ -1,0 +1,39 @@
+name: trivy single-dockerfile scan
+on:
+  ["push", "workflow_dispatch"]
+
+jobs:
+  build-and-scan:
+    name: Build and Scan Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build Docker Image
+        run: |
+          # Build Docker image from Dockerfile in root directory
+          repo_name=$(basename "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          image_tag="${repo_name}:latest"
+
+          # export env vars
+          echo "image_tag=$image_tag" >> $GITHUB_ENV
+          echo "repo_name=$repo_name" >> $GITHUB_ENV
+          
+          echo docker build -t "$image_tag" .
+          docker build -t "$image_tag" .
+
+      - name: Trivy Scan Docker Image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ env.image_tag }}"
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN'
+          ignore-unfixed: true
+          output: 'trivy-image-scan-v2-${{ env.repo_name }}.table'
+
+      - name: Upload Trivy scan results as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: trivy-image-scan-v2
+          path: 'trivy-image-scan-v2-${{ env.repo_name }}.table'

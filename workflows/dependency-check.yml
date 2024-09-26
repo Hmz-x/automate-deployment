@@ -1,0 +1,62 @@
+name: OWASP Dependency Check
+
+on: ["push", "workflow_dispatch"]
+
+jobs:
+  dependency-check:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - name: Set up .NET Core
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.x'
+
+    - name: Restore .NET dependencies
+      run: dotnet restore ${{ vars.MAIN_FILE }}
+
+    - name: Build the project
+      run: dotnet build ${{ vars.MAIN_FILE }} --no-restore --configuration Release
+
+    - name: Depcheck
+      uses: dependency-check/Dependency-Check_Action@main
+      id: Depcheck
+      with:
+        project: ${{ github.repository }}
+        path: '.'
+        format: 'HTML'
+        out: '.'
+        args: >
+          --enableRetired
+
+    - name: Upload Test results
+      uses: actions/upload-artifact@v3
+      with:
+        name: dependency-check-report.zip
+        path: ${{ github.workspace }}/dependency-check-report.html
+        
+    - name: Set Timezone to Turkey
+      run: |
+        ZONE="Europe/Istanbul"
+        sudo ln -sf /usr/share/zoneinfo/"${ZONE}" /etc/localtime
+        sudo hwclock -s
+
+    - name: Install mail client
+      run: sudo apt-get update && sudo apt-get install -y mailutils
+
+    - name: Send report via email
+      env:
+        EMAIL_ARR: ${{ secrets.EMAIL_ARR }} 
+        GMAIL_USER: ${{ secrets.GMAIL_USERNAME }}
+        GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
+      run: |
+        local_date="$(date +"%d/%m/%Y %H:%M:%S")"
+        # Split EMAIL_ARR into individual emails using line breaks as the delimiter
+        EMAILS=($(echo "${EMAIL_ARR}" | tr '\n' ' '))
+
+        echo "${local_date}: Sending dependency-check-report.html to ${EMAILS[*]}"
+        mail -s "${{ github.repository }} - Dependency Check Report - $local_date" \
+        -A dependency-check-report.html "${EMAILS[@]}"
