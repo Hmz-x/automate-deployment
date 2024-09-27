@@ -4,12 +4,16 @@
 . .env
 
 # Microservice Repo Constants
-MICROSERVICE_REPO="frostlinegames-backend/microservice-test"
-MICROSERVICE_REPO_BRANCH="main"
+MICROSERVICE_REPO="Hmz-x/auto-tagger"
+MICROSERVICE_REPO_BRANCH="master"
 WORKFLOW_DIR=".github/workflows"
 MICROSERVICE_REPO_API_BASE="https://api.github.com/repos/${MICROSERVICE_REPO}"
 
 LOCAL_WORKFLOW_DIR="workflows"
+
+# GitOps Repo Constants
+GITOPS_REPO="https://${GITHUB_TOKEN}@github.com/frostlinegames-backend/gitops-test.git"
+GITOPS_REPO_BRANCH="main"
 
 # Array for dependencies
 deps_arr=("jq")

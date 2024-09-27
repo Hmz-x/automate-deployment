@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {VARIABLE}
+  namespace: microservices
+  labels:
+    app: {VARIABLE}
+spec:
+  replicas: {VARIABLE} # Number of pod replicas
+  selector:
+    matchLabels:
+      app: {VARIABLE}
+  template:
+    metadata:
+      labels:
+        app: {VARIABLE}
+    spec:
+      imagePullSecrets:
+      - name: frostline-registry
+      containers:
+      - name: {VARIABLE}
+        image: {VARIABLE} # Replace with your Docker image and tag
+        ports:
+        - containerPort: {VARIABLE}
