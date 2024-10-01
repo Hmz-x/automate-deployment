@@ -3,22 +3,28 @@
 # Source .env for GITHUB_TOKEN
 . .env
 
+# Project name constant
+PROJ_NAME="automate_deployment"
+
 # Microservice Repo Constants
-MICROSERVICE_REPO="Hmz-x/auto-tagger"
-MICROSERVICE_REPO_BRANCH="master"
-WORKFLOW_DIR=".github/workflows"
+MICROSERVICE_REPO="frostlinegames-backend/scripts"
+MICROSERVICE_REPO_BRANCH="main"
+MICROSERVICE_WORKFLOW_DIR=".github/workflows"
 MICROSERVICE_REPO_API_BASE="https://api.github.com/repos/${MICROSERVICE_REPO}"
 
-LOCAL_WORKFLOW_DIR="workflows"
+# Pipeline Repo Constants
+PIPELINE_REPO="frostlinegames-backend/GithubActionsPipeline"
+PIPELINE_REPO_BRANCH="combined-workflows"
+PIPELINE_WORKFLOW_DIR=".github/workflows"
+PIPELINE_WORKFLOW_FILE="full_security_and_build_pipeline.yml"
+PIPELINE_REPO_RAW="https://raw.githubusercontent.com/${PIPELINE_REPO}/${PIPELINE_REPO_BRANCH}/${PIPELINE_WORKFLOW_DIR}/${PIPELINE_WORKFLOW_FILE}"
 
-# GitOps Repo Constants
-GITOPS_REPO="https://${GITHUB_TOKEN}@github.com/frostlinegames-backend/gitops-test.git"
-GITOPS_REPO_BRANCH="main"
+# Temporary file path
+TEMP_WORKFLOW_FILE="/tmp/${PROJ_NAME}/${PIPELINE_WORKFLOW_FILE}"
 
 # Array for dependencies
 deps_arr=("jq")
 
-# Step 0) Function to check if dependencies are installed
 check_deps() {
   for dep in "${deps_arr[@]}"; do
     if ! command -v "$dep" &> /dev/null; then
@@ -45,7 +51,7 @@ upload_file_to_repo() {
   response=$(curl -s -o /dev/null -w "%{http_code}" \
     -X PUT -H "Authorization: token $GITHUB_TOKEN" \
     -d "$json_payload" \
-    "${MICROSERVICE_REPO_API_BASE}/contents/${WORKFLOW_DIR}/${file_name}")
+    "${MICROSERVICE_REPO_API_BASE}/contents/${MICROSERVICE_WORKFLOW_DIR}/${file_name}")
 
   if [ "$response" -eq 201 ]; then
     echo "Successfully uploaded $file_name."
@@ -54,29 +60,52 @@ upload_file_to_repo() {
   fi
 }
 
-check_workflows()
-{
+# Function to download the workflow file from the pipeline repo with authentication
+download_pipeline_workflow() {
+  echo "Downloading ${PIPELINE_WORKFLOW_FILE} from ${PIPELINE_REPO} to /tmp..."
+  
+  # Create directory if it doesn't exist
+  mkdir -p "/tmp/${PROJ_NAME}"
+
+  # Use GITHUB_TOKEN for authentication when accessing a private repository
+  curl -H "Authorization: token $GITHUB_TOKEN" \
+       -s -o "${TEMP_WORKFLOW_FILE}" "${PIPELINE_REPO_RAW}"
+
+  if [ -f "${TEMP_WORKFLOW_FILE}" ]; then
+    echo "Downloaded ${PIPELINE_WORKFLOW_FILE} to ${TEMP_WORKFLOW_FILE}."
+  else
+    echo "Failed to download ${PIPELINE_WORKFLOW_FILE}."
+    exit 1
+  fi
+}
+
+check_workflows() {
   echo -e "~~~~~ Checking For Workflows ~~~~~\n"
 
-  for local_file in "${LOCAL_WORKFLOW_DIR}"/*; do
-    file_name="$(basename "$local_file")"
-    
-    # Check if the file exists in the repository
-    response=$(curl -s -o /dev/null -w "%{http_code}" \
-      -H "Authorization: token $GITHUB_TOKEN" \
-      "${MICROSERVICE_REPO_API_BASE}/contents/${WORKFLOW_DIR}/${file_name}?ref=${MICROSERVICE_REPO_BRANCH}")
+  # Check if the file exists in the repository
+  response=$(curl -s -o /dev/null -w "%{http_code}" \
+    -H "Authorization: token $GITHUB_TOKEN" \
+    "${MICROSERVICE_REPO_API_BASE}/contents/${MICROSERVICE_WORKFLOW_DIR}/${PIPELINE_WORKFLOW_FILE}?ref=${MICROSERVICE_REPO_BRANCH}")
 
-    if [ "$response" -eq 200 ]; then
-      echo "File ${file_name} already exists in the repository. Skipping..."
+  if [ "$response" -eq 200 ]; then
+    echo "File ${PIPELINE_WORKFLOW_FILE} already exists in the microservice repository. Skipping..."
+  else
+    echo "File ${PIPELINE_WORKFLOW_FILE} does not exist in the microservice repository. Checking /tmp for existing file..."
+    
+    if [ -f "${TEMP_WORKFLOW_FILE}" ]; then
+      echo "Using existing file from ${TEMP_WORKFLOW_FILE}."
     else
-      echo "File ${file_name} does not exist in the repository. Uploading..."
-      upload_file_to_repo "$local_file"
+      echo "File not found in /tmp. Downloading it..."
+      download_pipeline_workflow
     fi
-  done
+
+    echo "Uploading ${TEMP_WORKFLOW_FILE} to microservice repository..."
+    upload_file_to_repo "${TEMP_WORKFLOW_FILE}"
+  fi
 }
 
 # Step 0: Check if dependencies are installed
 check_deps
 
-# Step 1: Check if workflow files exist in repo, if not upload to repo
+# Step 1: Check if the workflow file exists in the repo, if not upload to repo
 check_workflows
