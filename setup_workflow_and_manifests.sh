@@ -2,13 +2,14 @@
 
 # Change to the directory where the script is located
 cd "$(dirname "$0")" || exit 1
-# Source .env for configured environment variables
+
+# Source .env for GITHUB_TOKEN and other environment variables
 set -o allexport
 . .env
 set +o allexport
 
 # Project constants
-PROJ_NAME="automate_deployment"
+PROJ_NAME="setup_workflow_and_manifests"
 TEMPLATE_DIR="k8s_config_templates"
 
 # Microservice Repo Constants
@@ -26,7 +27,8 @@ deps_arr=("jq" "envsubst")
 # Array for required environment variables
 env_vars_arr=("GITHUB_TOKEN" "MICROSERVICE_REPO" "MICROSERVICE_REPO_BRANCH"
   "PIPELINE_REPO" "PIPELINE_REPO_BRANCH" "PIPELINE_WORKFLOW_FILE" "APP_NAME"
-  "REPLICA_COUNT" "APP_IMAGE" "TARGET_PORT" "SERVICE_PORT")
+  "REPLICA_COUNT" "APP_IMAGE" "TARGET_PORT" "SERVICE_PORT" "GITOPS_REPO" "GITOPS_REPO_BRANCH"
+  "GITOPS_MICROSERVICES_DIR")
 
 check_env_vars() {
   for env_var in "${env_vars_arr[@]}"; do
@@ -120,22 +122,60 @@ check_workflows() {
 generate_k8s_configs() {
   echo -e "\n~~~~~ Generating K8s Configs ~~~~~\n"
 
-  local OUTPUT_DIR="/tmp/${PROJ_NAME}"
+  local OUTPUT_DIR="/tmp/${PROJ_NAME}/${APP_NAME}"
+  
+  # Check if the directory exists, if not, create it
   [ ! -d "$OUTPUT_DIR" ] && mkdir -p "$OUTPUT_DIR"
 
   # Find all .yaml and .yml files in TEMPLATE_DIR
   find "$TEMPLATE_DIR" -type f \( -name "*.yaml" -o -name "*.yml" \) | while read -r template; do
-    # Extract OBJECTTYPE from the filename (before .yaml or .yml)
-    filename=$(basename -- "$template")
-    OBJECTTYPE="${filename%%.*}"
+    # Extract the filename directly
+    filename=$(basename "$template")
 
-    # Output file name format: $APP_NAME-$OBJECTTYPE.yaml
-    OUTPUT_FILE="$OUTPUT_DIR/${APP_NAME}-${OBJECTTYPE}.yaml"
+    # Output file name format remains the same as the template file (e.g., deployment.yaml, service.yaml)
+    OUTPUT_FILE="$OUTPUT_DIR/$filename"
 
     # Substitute environment variables using envsubst and write the result to the output file
     envsubst < "$template" > "$OUTPUT_FILE"
 
     echo "$OUTPUT_FILE generated."
+  done
+}
+
+push_to_gitops_repo() {
+  echo -e "\n~~~~~ Pushing $APP_NAME to GitOps repo ~~~~~\n"
+
+  local FILES_DIR="/tmp/${PROJ_NAME}/${APP_NAME}"
+
+  # Loop through all files in the $APP_NAME directory
+  for file_path in "$FILES_DIR"/*; do
+    local file_name=$(basename "$file_path")
+    local gitops_path="$GITOPS_MICROSERVICES_DIR/${APP_NAME}/${file_name}"
+
+    # Get the SHA of the file if it already exists in the GitOps repo
+    local sha=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+      "https://api.github.com/repos/${GITOPS_REPO}/contents/${gitops_path}?ref=${GITOPS_REPO_BRANCH}" | jq -r '.sha')
+
+    # Read the file content and base64 encode it
+    local base64_content=$(base64 -w 0 "$file_path")
+
+    # Prepare the JSON payload
+    local json_payload=$(jq -nc --arg content "$base64_content" --arg branch "$GITOPS_REPO_BRANCH" \
+      --arg message "$APP_NAME - Added $file_name in manifests/microservices/$APP_NAME" \
+      --arg sha "$sha" \
+      '{message: $message, content: $content, branch: $branch, sha: $sha}')
+
+    # Send the PUT request to either create or update the file
+    response=$(curl -s -o /dev/null -w "%{http_code}" \
+      -X PUT -H "Authorization: token $GITHUB_TOKEN" \
+      -d "$json_payload" \
+      "https://api.github.com/repos/${GITOPS_REPO}/contents/${gitops_path}")
+
+    if [ "$response" -eq 201 ] || [ "$response" -eq 200 ]; then
+      echo "Successfully pushed $file_name to GitOps repo."
+    else
+      echo "Failed to push $file_name to GitOps repo. Response code: $response"
+    fi
   done
 }
 
@@ -148,5 +188,8 @@ check_deps
 # Step 2: Check if the workflow file exists in the repo, if not upload to repo
 check_workflows
 
-# Step 3: Generate Kubernetes configurations from templates and output to /tmp/$PROJ_NAME
+# Step 3: Generate Kubernetes configurations from templates and output to /tmp/$PROJ_NAME/$APP_NAME
 generate_k8s_configs
+
+# Step 4: Push the $APP_NAME directory to the GitOps repo
+push_to_gitops_repo
