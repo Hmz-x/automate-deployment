@@ -8,6 +8,8 @@ The workflow file is cached locally in the directory `/tmp/$PROJ_NAME` (path: `/
 
 You can customize the script by modifying the following variables within the script to suit different repository configurations:
 
+
+- **`$GITHUB_TOKEN`**: GitHub Token used to authenticate requests against repositories.
 - **`$MICROSERVICE_REPO`**: The microservice repository where the workflow file will be uploaded.
 - **`$MICROSERVICE_REPO_BRANCH`**: The branch in the microservice repository where the workflow file will be added.
 - **`$PIPELINE_REPO`**: The repository from which the workflow file will be fetched.

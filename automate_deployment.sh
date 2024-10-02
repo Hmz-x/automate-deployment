@@ -1,10 +1,11 @@
 #!/bin/bash
 
-# Source .env for GITHUB_TOKEN
+# Source .env for GITHUB_TOKEN and other environment variables
 . .env
 
-# Project name constant
+# Project constants
 PROJ_NAME="automate_deployment"
+TEMPLATE_DIR="k8s_config_templates"
 
 # Microservice Repo Constants
 MICROSERVICE_REPO="frostlinegames-backend/scripts"
@@ -23,7 +24,7 @@ PIPELINE_REPO_RAW="https://raw.githubusercontent.com/${PIPELINE_REPO}/${PIPELINE
 TEMP_WORKFLOW_FILE="/tmp/${PROJ_NAME}/${PIPELINE_WORKFLOW_FILE}"
 
 # Array for dependencies
-deps_arr=("jq")
+deps_arr=("jq" "envsubst")
 
 check_deps() {
   for dep in "${deps_arr[@]}"; do
@@ -104,8 +105,34 @@ check_workflows() {
   fi
 }
 
+# Function to generate Kubernetes configs from templates
+generate_k8s_configs() {
+  echo -e "\n~~~~~ Generating K8s Configs ~~~~~\n"
+
+  local OUTPUT_DIR="/tmp/${PROJ_NAME}"
+  [ ! -d "$OUTPUT_DIR" ] && mkdir -p "$OUTPUT_DIR"
+
+  # Find all .yaml and .yml files in TEMPLATE_DIR
+  find "$TEMPLATE_DIR" -type f \( -name "*.yaml" -o -name "*.yml" \) | while read -r template; do
+    # Extract OBJECTTYPE from the filename (before .yaml or .yml)
+    filename=$(basename -- "$template")
+    OBJECTTYPE="${filename%%.*}"
+
+    # Output file name format: $APP_NAME-$OBJECTTYPE.yaml
+    OUTPUT_FILE="$OUTPUT_DIR/${APP_NAME}-${OBJECTTYPE}.yaml"
+
+    # Substitute environment variables using envsubst and write the result to the output file
+    envsubst < "$template" > "$OUTPUT_FILE"
+
+    echo "$OUTPUT_FILE generated."
+  done
+}
+
 # Step 0: Check if dependencies are installed
 check_deps
 
 # Step 1: Check if the workflow file exists in the repo, if not upload to repo
 check_workflows
+
+# Step 2: Generate Kubernetes configurations from templates and output to /tmp/$PROJ_NAME
+generate_k8s_configs
