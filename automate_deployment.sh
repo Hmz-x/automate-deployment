@@ -1,35 +1,46 @@
 #!/bin/bash
 
-# Source .env for GITHUB_TOKEN and other environment variables
+# Change to the directory where the script is located
+cd "$(dirname "$0")" || exit 1
+# Source .env for configured environment variables
+set -o allexport
 . .env
+set +o allexport
 
 # Project constants
 PROJ_NAME="automate_deployment"
 TEMPLATE_DIR="k8s_config_templates"
 
 # Microservice Repo Constants
-MICROSERVICE_REPO="frostlinegames-backend/scripts"
-MICROSERVICE_REPO_BRANCH="main"
 MICROSERVICE_WORKFLOW_DIR=".github/workflows"
 MICROSERVICE_REPO_API_BASE="https://api.github.com/repos/${MICROSERVICE_REPO}"
 
 # Pipeline Repo Constants
-PIPELINE_REPO="frostlinegames-backend/GithubActionsPipeline"
-PIPELINE_REPO_BRANCH="combined-workflows"
 PIPELINE_WORKFLOW_DIR=".github/workflows"
-PIPELINE_WORKFLOW_FILE="full_security_and_build_pipeline.yml"
 PIPELINE_REPO_RAW="https://raw.githubusercontent.com/${PIPELINE_REPO}/${PIPELINE_REPO_BRANCH}/${PIPELINE_WORKFLOW_DIR}/${PIPELINE_WORKFLOW_FILE}"
-
-# Temporary file path
 TEMP_WORKFLOW_FILE="/tmp/${PROJ_NAME}/${PIPELINE_WORKFLOW_FILE}"
 
 # Array for dependencies
 deps_arr=("jq" "envsubst")
 
+# Array for required environment variables
+env_vars_arr=("GITHUB_TOKEN" "MICROSERVICE_REPO" "MICROSERVICE_REPO_BRANCH"
+  "PIPELINE_REPO" "PIPELINE_REPO_BRANCH" "PIPELINE_WORKFLOW_FILE" "APP_NAME"
+  "REPLICA_COUNT" "APP_IMAGE" "TARGET_PORT" "SERVICE_PORT")
+
+check_env_vars() {
+  for env_var in "${env_vars_arr[@]}"; do
+    if [ -z "${!env_var}" ]; then
+      echo "Error: Environment variable $env_var is not set. Exiting." >&2
+      exit 1
+    fi
+  done
+}
+
 check_deps() {
   for dep in "${deps_arr[@]}"; do
     if ! command -v "$dep" &> /dev/null; then
-      echo "Dependency $dep not found in PATH. Exit Code 1" 2>&1
+      echo "Dependency $dep not found in PATH. Exit Code 1" >&2
       exit 1
     fi
   done
@@ -128,11 +139,14 @@ generate_k8s_configs() {
   done
 }
 
-# Step 0: Check if dependencies are installed
+# Step 0: Check if all required environment variables are set
+check_env_vars
+
+# Step 1: Check if dependencies are installed
 check_deps
 
-# Step 1: Check if the workflow file exists in the repo, if not upload to repo
+# Step 2: Check if the workflow file exists in the repo, if not upload to repo
 check_workflows
 
-# Step 2: Generate Kubernetes configurations from templates and output to /tmp/$PROJ_NAME
+# Step 3: Generate Kubernetes configurations from templates and output to /tmp/$PROJ_NAME
 generate_k8s_configs
